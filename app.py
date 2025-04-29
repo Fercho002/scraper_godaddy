@@ -1,23 +1,26 @@
 from flask import Flask, request, jsonify
-from playwright.sync_api import sync_playwright
+import requests
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
 def scrape_godaddy(domain_name):
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.goto(f"https://www.godaddy.com/domainsearch/find?domainToCheck={domain_name}")
-        page.wait_for_selector('span[data-cy="domain-name-price"]', timeout=15000)
-        price_element = page.query_selector('span[data-cy="domain-name-price"]')
-        if price_element:
-            price = price_element.inner_text()
-            available = True
-        else:
-            price = None
-            available = False
-        browser.close()
-        return {"domain": domain_name, "available": available, "price": price}
+    url = f"https://www.godaddy.com/domainsearch/find?domainToCheck={domain_name}"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        return {"error": "No se pudo acceder a GoDaddy"}
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # Este selector puede cambiar. Si GoDaddy actualiza su HTML, habrá que ajustar esto.
+    price_tag = soup.find('span', {'data-cy': 'domain-name-price'})
+    if price_tag:
+        return {"domain": domain_name, "available": True, "price": price_tag.text.strip()}
+    
+    return {"domain": domain_name, "available": False, "price": "N/A"}
 
 @app.route('/scrape', methods=['GET'])
 def scrape_api():
@@ -27,5 +30,6 @@ def scrape_api():
     result = scrape_godaddy(domain)
     return jsonify(result)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
+
